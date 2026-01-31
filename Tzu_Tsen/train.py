@@ -25,7 +25,7 @@ from myutils import (
     get_model,
     get_model_org
 )
-from pytorch_balanced_sampler import SamplerFactory
+# from pytorch_balanced_sampler import SamplerFactory
 
 
 def grad_norm(model):
@@ -95,6 +95,7 @@ def run_epoch(loader, model, model_org, criterion, optimizer, device, is_trainin
             # Target handling
             if config.multitask_type == "off":
                 loss = criterion(outputs, labels_batch)
+                loss_dict = {'kl': loss.item()}
                 
             else:
                 if config.multitask_type == "all":
@@ -127,14 +128,21 @@ def run_epoch(loader, model, model_org, criterion, optimizer, device, is_trainin
                     loss, loss_dict = criterion(outputs, targets_levels)
                 else:
                     loss, loss_dict = criterion(outputs, targets)
-
+            
             # Backward
             if is_training:
                 loss.backward()
                 optimizer.step()
+            # print(loss_dict) # {'kl': 1.8507874011993408, 'jsnm': 1.4280171394348145, 'jsnl': 0.6741040945053101, 'osfm': 1.4683774709701538, 'ostm': 1.3698973655700684, 'ostl': 1.265559434890747, 'osfl': 1.4578583240509033
+            if config.WANDB and is_training:
+                wandb.log(
+                    loss_dict,
+                )
 
         # Update running loss
-        total_loss += loss.item() * labels_batch.size(0)
+        # total_loss += loss.item() * labels_batch.size(0)
+
+        total_loss += (loss_dict['kl'] + 1 * (loss_dict.get('jsnm',0) + loss_dict.get('jsnl',0) + loss_dict.get('osfm',0) + loss_dict.get('ostm',0) + loss_dict.get('ostl',0) + loss_dict.get('osfl',0))) * labels_batch.size(0)
         num_processed_samples += labels_batch.size(0)
 
         # Predictions
@@ -418,18 +426,19 @@ def main(config):
         print(f"Using class weights: {class_weights_tensor}")
 
 
-    if config.balance_sampling:
-        # sampler =  WeightedRandomSampler(weights = class_weights_tensor, num_samples = len(train_pids), replacement = True)
-        sampler = SamplerFactory().get(
-            class_idxs=[0,1,2,3,4],
-            batch_size=16,
-            n_batches=336,
-            alpha=0.5,
-            kind='fixed'
-        )
-    else:
-        sampler = None
+    # if config.balance_sampling:
+    #     # sampler =  WeightedRandomSampler(weights = class_weights_tensor, num_samples = len(train_pids), replacement = True)
+    #     sampler = SamplerFactory().get(
+    #         class_idxs=[0,1,2,3,4],
+    #         batch_size=16,
+    #         n_batches=336,
+    #         alpha=0.5,
+    #         kind='fixed'
+    #     )
+    # else:
+    #     sampler = None
 
+    sampler = None
 
     train_loader = DataLoader(train_ds, config.BATCH_SIZE, shuffle=False if sampler else True, collate_fn=mil_collate_fn, sampler=sampler,
                               num_workers=config.NUM_WORKERS, pin_memory=config.PIN_MEMORY)
