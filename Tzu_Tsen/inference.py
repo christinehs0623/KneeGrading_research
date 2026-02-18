@@ -75,14 +75,14 @@ def run_epoch(loader, model, model_org, criterion, optimizer, device, is_trainin
         moved_bags, moved_features, valid_indices = [], [], []
         for i, bag in enumerate(list_of_patch_bags):
             if bag.nelement() > 0:
-                moved_bags.append(bag.to(device, non_blocking=True))
-                moved_features.append(list_of_features[i][0].to(device, non_blocking=True))
+                moved_bags.append(bag.to(device, non_blocking=config.PIN_MEMORY))
+                moved_features.append(list_of_features[i][0].to(device, non_blocking=config.PIN_MEMORY))
                 valid_indices.append(i)
 
         if not moved_bags:
             continue
 
-        labels_batch = labels_batch[valid_indices].to(device, non_blocking=True)
+        labels_batch = labels_batch[valid_indices].to(device, non_blocking=config.PIN_MEMORY)
 
         if is_training:
             optimizer.zero_grad()
@@ -91,7 +91,9 @@ def run_epoch(loader, model, model_org, criterion, optimizer, device, is_trainin
             # Forward pass
             if config.feedback_type == "off":
                 if config.model_type == "MIL_ORG":
-                    outputs, att_scores = model(moved_bags)
+                    outputs, _ = model(moved_bags)
+                    # print(outputs)
+                    
                 else:
                     outputs, att_scores, patch_embeddings, aggregated_features = model(moved_bags)
             else:
@@ -183,15 +185,79 @@ def run_epoch(loader, model, model_org, criterion, optimizer, device, is_trainin
     avg_loss = total_loss / num_processed_samples if num_processed_samples > 0 else 0
     return avg_loss, all_labels, all_preds, all_probs, all_attentions, all_patch_embeddings, all_aggregated_features
 
-def bootstrap_evaluation(model, model_org, test_pids, config, criterion, n_iterations=5):
+# def bootstrap_evaluation(model, model_org, test_pids, config, criterion, n_iterations=5):
+#     """
+#     執行 Bootstrapping 以計算測試集的統計穩定性
+#     """
+#     all_iteration_metrics = []
+    
+#     print(f"\n" + "="*40)
+#     print(f"🌟 Starting Bootstrapping (N={n_iterations})")
+#     print("="*40)
+
+#     for i in range(n_iterations):
+#         # 1. 有放回抽樣 PIDs
+#         bs_pids = resample(
+#             test_pids,
+#             replace=True,
+#             n_samples=len(test_pids),
+#             random_state=config.SEED + i
+#         )
+
+#         # file_path = os.path.join(config.CHECKPOINT_DIR, f"bootstrap_sample_{i+1}.txt")  
+#         # with open(file_path, "w") as f:
+#         #     f.write("\n".join(bs_pids))
+            
+
+#         # 2. 建立臨時 DataLoader
+#         bs_ds = KneeMILDataset(config.H5_FILE, bs_pids, transform=create_transforms(*np.load(config.MEAN_STD_FILE_PATH))[1])
+#         bs_loader = DataLoader(
+#             bs_ds, batch_size=config.BATCH_SIZE, shuffle=False, 
+#             collate_fn=mil_collate_fn, num_workers=config.NUM_WORKERS, pin_memory=config.PIN_MEMORY
+#         )
+
+#         # 3. 執行推論
+#         _, bs_labels, bs_preds, _, _, _, _ = run_epoch(
+#             bs_loader, model, model_org, criterion, None, config.DEVICE,
+#             is_training=False, config=config, desc=f"BS-Iter {i+1}"
+#         )
+
+#         # 4. 計算指標 (使用你原本的 compute_metrics)
+#         metrics = compute_metrics(config.multitask_type, bs_labels, bs_preds)
+#         all_iteration_metrics.append(metrics)
+
+#     # 5. 整理結果
+#     tasks = config.OARSI_TASKS.keys() if config.multitask_type != "off" else ["kl"]
+#     final_stats = {}
+
+#     for task in tasks:
+#         final_stats[task] = {}
+#         for m_name in ["acc", "f1", "kappa"]:
+#             vals = [it[task][m_name] for it in all_iteration_metrics]
+#             print(f"Task {task}, Metric {m_name}: {vals}")
+#             final_stats[task][m_name] = {
+#                 "mean": np.mean(vals),
+#                 "std": np.std(vals)
+#             }
+            
+#     return final_stats
+def bootstrap_evaluation(
+    model, model_org, test_pids, config, criterion, n_iterations=5
+):
     """
     執行 Bootstrapping 以計算測試集的統計穩定性
+    回傳：
+        final_stats[task][metric] = {
+            "values": np.ndarray (n_iterations,),
+            "mean": float,
+            "std": float
+        }
     """
     all_iteration_metrics = []
-    
-    print(f"\n" + "="*40)
+
+    print("\n" + "=" * 40)
     print(f"🌟 Starting Bootstrapping (N={n_iterations})")
-    print("="*40)
+    print("=" * 40)
 
     for i in range(n_iterations):
         # 1. 有放回抽樣 PIDs
@@ -202,42 +268,71 @@ def bootstrap_evaluation(model, model_org, test_pids, config, criterion, n_itera
             random_state=config.SEED + i
         )
 
-        file_path = os.path.join(config.CHECKPOINT_DIR, f"bootstrap_sample_{i+1}.txt")  
-        with open(file_path, "w") as f:
-            f.write("\n".join(bs_pids))
-            
+        # 2. 建立 DataLoader
+        bs_ds = KneeMILDataset(
+            config.H5_FILE,
+            bs_pids,
+            transform=create_transforms(*np.load(config.MEAN_STD_FILE_PATH))[1]
+        )
 
-        # 2. 建立臨時 DataLoader
-        bs_ds = KneeMILDataset(config.H5_FILE, bs_pids, transform=create_transforms(*np.load(config.MEAN_STD_FILE_PATH))[1])
         bs_loader = DataLoader(
-            bs_ds, batch_size=config.BATCH_SIZE, shuffle=False, 
-            collate_fn=mil_collate_fn, num_workers=config.NUM_WORKERS, pin_memory=config.PIN_MEMORY
+            bs_ds,
+            batch_size=config.BATCH_SIZE,
+            shuffle=False,
+            collate_fn=mil_collate_fn,
+            num_workers=config.NUM_WORKERS,
+            pin_memory=config.PIN_MEMORY
         )
 
-        # 3. 執行推論
+        # 3. 推論
         _, bs_labels, bs_preds, _, _, _, _ = run_epoch(
-            bs_loader, model, model_org, criterion, None, config.DEVICE,
-            is_training=False, config=config, desc=f"BS-Iter {i+1}"
+            bs_loader,
+            model,
+            model_org,
+            criterion,
+            optimizer=None,
+            device=config.DEVICE,
+            is_training=False,
+            config=config,
+            desc=f"BS-Iter {i+1}"
         )
 
-        # 4. 計算指標 (使用你原本的 compute_metrics)
-        metrics = compute_metrics(config.multitask_type, bs_labels, bs_preds)
+        # 4. 計算指標
+        metrics = compute_metrics(
+            config.multitask_type, bs_labels, bs_preds
+        )
+
         all_iteration_metrics.append(metrics)
 
     # 5. 整理結果
-    tasks = config.OARSI_TASKS.keys() if config.multitask_type != "off" else ["kl"]
+    tasks = (
+        config.OARSI_TASKS.keys()
+        if config.multitask_type != "off"
+        else ["kl"]
+    )
+
     final_stats = {}
 
     for task in tasks:
         final_stats[task] = {}
         for m_name in ["acc", "f1", "kappa"]:
-            vals = [it[task][m_name] for it in all_iteration_metrics]
-            print(f"Task {task}, Metric {m_name}: {vals}")
+            vals = np.array(
+                [it[task][m_name] for it in all_iteration_metrics],
+                dtype=np.float32
+            )
+
+            # debug 用：真的每次都有存到
+            print(
+                f"[Bootstrap] Task={task}, Metric={m_name}, "
+                f"Values={vals.tolist()}"
+            )
+
             final_stats[task][m_name] = {
-                "mean": np.mean(vals),
-                "std": np.std(vals)
+                "values": vals,
+                "mean": float(vals.mean()),
+                "std": float(vals.std())
             }
-            
+
     return final_stats
 
 def main(config):
@@ -393,14 +488,17 @@ def main(config):
             os.path.join(config.CHECKPOINT_DIR, f"best_model_{config.inference_target}_kappa.pth"), 
             map_location=config.DEVICE
         ))
-    # model.load_state_dict(torch.load(
-    #         os.path.join(config.CHECKPOINT_DIR, f"best_model_avg_kappa.pth"), 
-    #         map_location=config.DEVICE
-    #     ))
     if model_org:
         model_org.load_state_dict(torch.load(config.PRETRAINED_MODEL_PATH, map_location=config.DEVICE))
         
     # ----------------- Loss & Optimizer ----------------- #
+    # class_counts = np.bincount(train_kl_grades, minlength=NUM_CLASSES)
+    # # Avoid division by zero if a class is missing in training (should ideally not happen with good splits)
+    # class_weights_raw = 1.0 / (class_counts + 1e-6) # Add epsilon for stability
+    # class_weights_normalized = class_weights_raw / np.sum(class_weights_raw) * NUM_CLASSES # Optional normalization
+    # class_weights_tensor = torch.tensor(class_weights_normalized, dtype=torch.float).to(DEVICE)
+    # print(f"Using class weights: {class_weights_tensor}")
+    
     class_weights_tensor = None
     criterion = get_criterion(config.lossfcn_type, class_weights_tensor, config.OARSI_TASKS)
     optimizer = None
@@ -452,12 +550,13 @@ def main(config):
         )
         ax = disp.ax_
         for text in ax.texts:
-            text.set_fontsize(14)  
+            text.set_fontsize(16)  
 
         ax.tick_params(axis='both', which='major', labelsize=14)
         ax.xaxis.label.set_size(14)
         ax.yaxis.label.set_size(14)
         plt.tight_layout()
+        # plt.title(f"{task.upper()} - Normalized Confusion Matrix", fontsize=16)
         plt.savefig(os.path.join(config.CHECKPOINT_DIR, f"cm_{task}_kappa.eps"), format='eps')
         plt.savefig(os.path.join(config.CHECKPOINT_DIR, f"cm_{task}_kappa.png"), format='png')
         plt.close()
@@ -466,6 +565,7 @@ def main(config):
             for line in results:
                 f.write(line + "\n")
     else:
+        
         for task in test_labels.keys():
             labels = test_labels[task]
             preds = test_preds[task]
@@ -496,7 +596,7 @@ def main(config):
             )
             ax = disp.ax_
             for text in ax.texts:
-                text.set_fontsize(14)  
+                text.set_fontsize(16)  
 
             ax.tick_params(axis='both', which='major', labelsize=14)
             ax.xaxis.label.set_size(14)
@@ -504,6 +604,7 @@ def main(config):
 
             # Add title
             plt.title(f"{task.upper()} - Normalized Confusion Matrix", fontsize=16)
+            plt.tight_layout()
             plt.savefig(os.path.join(config.CHECKPOINT_DIR, f"cm_{task}.eps"), format='eps')
             plt.savefig(os.path.join(config.CHECKPOINT_DIR, f"cm_{task}.png"), format='png')
             plt.close()
@@ -563,16 +664,16 @@ def main(config):
     else:
         logits, att_scores, patch_embeddings, aggregated_features = model([patch_bag_tensor], model_org, attention_tool)
 
-    print(f"patch_bag_tensor shape: {patch_bag_tensor.shape}")  # shape you pass IN
-    print(f"logits : {logits}")                      # shape OUT
-    print(f"att_scores shape: {att_scores.shape}")              # if relevant
+    # print(f"patch_bag_tensor shape: {patch_bag_tensor.shape}")  # shape you pass IN
+    # print(f"logits : {logits}")                      # shape OUT
+    # print(f"att_scores shape: {att_scores.shape}")              # if relevant
 
     # Argmax across classes
     if config.multitask_type != "off":
         target_classes = logits['kl'].argmax(dim=1)
     else:
         target_classes = logits.argmax(dim=1)
-    print(f"target_classes shape: {target_classes.shape}")      # should be [batch_size]
+    # print(f"target_classes shape: {target_classes.shape}")      # should be [batch_size]
 
     # If you want just the first class for score:
     target_class = target_classes[0].item()
@@ -615,56 +716,43 @@ def main(config):
     # else:
     #     print("Wrong!")
 
-    # att_scores = att_scores[index_test]
-    att_scores = normalize_attention_scores(att_scores.detach().cpu().numpy()) # 41, 1
-    print(att_scores.shape)
+    visualize = True
+    if visualize:
+        att_scores = normalize_attention_scores(att_scores.detach().cpu().numpy()) # 41, 1
+        print(att_scores.shape)
 
+        visualize_attention_on_img(
+            save_path=config.CHECKPOINT_DIR,
+            file_path=rf"./original_data/V00/Bilateral_PA_Fixed_Flexion_Knee/{patient_ids[index_all]}.dcm",
+            patient_id=patient_ids[index_all],
+            index_all=index_all,
+            shapes_L_2d=shapes_L_2d,
+            shapes_R_2d=shapes_R_2d,
+            att_scores=att_scores.squeeze(),  # convert to 1D array
+            side=target_side,  # or 'R'
+            patchFromPoint=patchFromPoint,
+            process_xray=process_xray
+        )
+        reds_alpha = create_redsalpha()
 
-    # visualize_raw_xray_only(
-    #     save_path=config.CHECKPOINT_DIR,
-    #     file_path=rf"./original_data/V00/Bilateral_PA_Fixed_Flexion_Knee/{patient_ids[index_all]}.dcm",
-    #     patient_id=patient_ids[index_all],
-    #     index_all=index_all,
-    #     shapes_L_2d=shapes_L_2d,
-    #     shapes_R_2d=shapes_R_2d,
-    #     patchFromPoint=patchFromPoint,
-    #     process_xray=process_xray,
-    #     title=None,
-    #     draw_landmarks=False
-    # )
-    
-    visualize_attention_on_img(
-        save_path=config.CHECKPOINT_DIR,
-        file_path=rf"./original_data/V00/Bilateral_PA_Fixed_Flexion_Knee/{patient_ids[index_all]}.dcm",
-        patient_id=patient_ids[index_all],
-        index_all=index_all,
-        shapes_L_2d=shapes_L_2d,
-        shapes_R_2d=shapes_R_2d,
-        att_scores=att_scores.squeeze(),  # convert to 1D array
-        side=target_side,  # or 'R'
-        patchFromPoint=patchFromPoint,
-        process_xray=process_xray
-    )
-    reds_alpha = create_redsalpha()
-
-    visualize_cam_comparisons(
-        save_path=config.CHECKPOINT_DIR,
-        patient_id=patient_ids[index_all],
-        index_all=index_all,
-        index_test=index_test,
-        side=target_side,  # or "R"
-        test_labels=test_labels,
-        test_preds=test_preds,
-        att_scores=att_scores,
-        grayscale_cam_dict=grayscale_cam_dict,
-        process_xray_func=process_xray,
-        patch_from_point_func=patchFromPoint,
-        shapes_L_2d=shapes_L_2d,
-        shapes_R_2d=shapes_R_2d,
-        file_path_template=f"./original_data/V00/Bilateral_PA_Fixed_Flexion_Knee/{patient_ids[index_all]}.dcm",
-        patch_point_indices=PATCH_POINT_INDICES,
-        cmap_obj=reds_alpha,
-    )
+        visualize_cam_comparisons(
+            save_path=config.CHECKPOINT_DIR,
+            patient_id=patient_ids[index_all],
+            index_all=index_all,
+            index_test=index_test,
+            side=target_side,  # or "R"
+            test_labels=test_labels,
+            test_preds=test_preds,
+            att_scores=att_scores,
+            grayscale_cam_dict=grayscale_cam_dict,
+            process_xray_func=process_xray,
+            patch_from_point_func=patchFromPoint,
+            shapes_L_2d=shapes_L_2d,
+            shapes_R_2d=shapes_R_2d,
+            file_path_template=f"./original_data/V00/Bilateral_PA_Fixed_Flexion_Knee/{patient_ids[index_all]}.dcm",
+            patch_point_indices=PATCH_POINT_INDICES,
+            cmap_obj=reds_alpha,
+        )
 
     # ----------------- Bootstrapping ----------------- #
     bootstrap = True
