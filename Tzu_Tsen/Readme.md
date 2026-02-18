@@ -47,11 +47,8 @@ This script generates the following files:
 The main dataset file containing the extracted and processed image patches, ready for model training.
 
 ## Training
-`Config.py` contain training parameter and data parser to parse the 
+`config.py` contain training parameter and data parser.
+
  
-The notebook will automatically load the .h5 data file created in the previous step.
-Upon completion, the notebook will:
-Save the best model weights (based on validation set performance) to the ./model_checkpoints/ directory.
-Generate predictions (test_pred.npz) and attention scores (test_att_scores.npz) for the test set and save them in the ./inference/ directory for the next step.
 
 ## Inference and Visualization
