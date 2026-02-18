@@ -35,7 +35,7 @@ class KneeMILDataset(Dataset):
             patches_data = hf[group_name]['patches'][:]
             kl_grade_val = hf[group_name]['kl_grade'][0]
             aux_feature = hf[group_name]['aux_feature'][:] # Convert to numpy array
-
+        
             if self.kl_grade_mapping:
                 kl_grade_val = self.kl_grade_mapping.get(kl_grade_val, kl_grade_val)
 

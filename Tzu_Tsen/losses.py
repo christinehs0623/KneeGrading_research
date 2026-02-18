@@ -62,7 +62,7 @@ class CrossEntropy_MultiTask(nn.Module):
                 weight=weights,
                 reduction="mean"
             )
-            task_weight = 1.0 #if task == 'kl' else 0.2
+            task_weight = 1.0 if task == 'kl' else 0.2
             total_loss += l * task_weight
             loss_dict[task] = l.item() 
             num_tasks += 1

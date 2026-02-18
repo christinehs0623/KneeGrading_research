@@ -11,8 +11,10 @@ NOW = datetime.now().strftime('%Y%m%d_%H%M%S')
 DATA_HALF = False
 
 # Dataset / Checkpoints
-DEFAULT_H5_FILE = "knee_patches_patient_grouped_16_100_all_feature.h5"
+# DEFAULT_H5_FILE = "knee_patches_patient_grouped_16_100_all_feature.h5"
 DEFAULT_H5_FILE = "./original_data/V00/V00_knee_patches_patient_grouped_16_100_all_feature.h5"
+# DEFAULT_H5_FILE = "./original_data/V00/model_checkpoints_tnc_final/knee_patches_patient_grouped_16_100.h5"
+
 # DEFAULT_PRE_CKPT_DIR = "model_checkpoints_tnc_final"
 # DEFAULT_PRETRAINED_MODEL = os.path.join(DEFAULT_PRE_CKPT_DIR, "best_model_val_kappa.pth")
 
@@ -29,8 +31,8 @@ OARSI_TASKS = {
 NUM_FEATURES = len(OARSI_TASKS)
 
 FEATURE_EXTRACTOR_OUT_DIM = 128
-AGGREGATION_TYPE = "attention"
-# AGGREGATION_TYPE = "mean"
+# AGGREGATION_TYPE = "attention"
+AGGREGATION_TYPE = "mean"
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-4
 BATCH_SIZE = 16

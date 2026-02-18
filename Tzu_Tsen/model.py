@@ -715,6 +715,7 @@ class CompleteMILModel_MultiTask_SharedHead(nn.Module):
 
         return oai_preds_all, final_batch_att_scores, patch_embeddings_stacked_all, final_aggregated_features 
 
+
 class CompleteMILModel_MultiTask(nn.Module):
     def __init__(self, feature_extractor_out_dim, oai_task_num_classes, aggregation_type='attention'):
         super().__init__()
@@ -1220,4 +1221,41 @@ class CompleteMILCoral_MultiTask_Model(nn.Module):
             oai_preds_all[task_name] = torch.cat(oai_preds_all[task_name], dim=0)  # (B, K-1)
 
         return oai_preds_all, final_batch_att_scores, patch_embeddings_stacked_all, final_aggregated_features, 
-  
+ 
+if __name__ == "__main__":
+    # Simple test
+    model = CompleteMILModel_MultiTask_imedslab(feature_extractor_out_dim=128,
+                                               oai_task_num_classes={"kl":5, "mjs":4},
+                                               aggregation_type='attention')
+
+
+
+    # dummy_patch_bag_1 = torch.randn(10, 3, 64, 64)  # 10 patches
+    # dummy_patch_bag_2 = torch.randn(15, 3, 64, 64)  # 15 patches
+    # dummy_patch_bag_3 = torch.randn(8, 3, 64, 64)   # 8 patches
+    # list_of_patch_bags = [dummy_patch_bag_1, dummy_patch_bag_2, dummy_patch_bag_3]  
+    # oai_preds_all, final_batch_att_scores, patch_embeddings_stacked_all, final_aggregated_features = model(list_of_patch_bags)
+    # for task_name, preds in oai_preds_all.items():
+    #     print(f"Task: {task_name}, Predictions shape: {preds.shape}")
+    # print("Final batch attention scores shape:", final_batch_att_scores.shape)
+    # print("Patch embeddings stacked shape:", patch_embeddings_stacked_all.shape)
+    # print("Final aggregated features shape:", final_aggregated_features.shape)
+
+    # model size
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Total model parameters: {total_params}")
+
+    # model1 = CompleteMILModel_ORG(feature_extractor_out_dim=128,
+    #                          num_classes=5,
+    #                          aggregation_type='attention')
+    # model2 = CompleteMILModel_COPY(feature_extractor_out_dim=128,
+    #                          num_classes=5,
+    #                          aggregation_type='attention')
+    # ckpt = "./original_data/V00/model_checkpoints_tnc_final/best_model_kl_kappa.pth"
+    # sd = torch.load(ckpt, map_location="cpu")
+    # model1.load_state_dict(sd)
+    # model2.load_state_dict(sd)
+
+    # for p1, p2 in zip(model1.parameters(), model2.parameters()):
+    #     if not torch.equal(p1, p2):
+    #         print("Parameters are not equal")

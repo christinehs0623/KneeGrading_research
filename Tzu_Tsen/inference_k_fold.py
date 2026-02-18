@@ -31,153 +31,156 @@ from myutils import (
     create_redsalpha,
 )
 from sklearn.model_selection import StratifiedKFold
-from inference import run_epoch, Config
+# from inference import run_epoch, Config
 
-# class Config:
-#     def __init__(self, config_dict):
-#         for k, v in config_dict.items():
-#             setattr(self, k, v)
+class Config:
+    def __init__(self, config_dict):
+        for k, v in config_dict.items():
+            setattr(self, k, v)
 
 
-# def run_epoch(loader, model, model_org, criterion, optimizer, device, is_training, config, desc=""):
-#     """
-#     Run one epoch of training/validation
-#     config: parsed argparse with flags like config.use_multitask, config.use_ordinal, config.training_type
-#     """
-#     model.train() if is_training else model.eval()
-#     total_loss, num_processed_samples = 0.0, 0
+def run_epoch(loader, model, model_org, criterion, optimizer, device, is_training, config, desc=""):
+    """
+    Run one epoch of training/validation
+    config: parsed argparse with flags like config.use_multitask, config.use_ordinal, config.training_type
+    """
+    model.train() if is_training else model.eval()
+    total_loss, num_processed_samples = 0.0, 0
 
-#     # Prepare prediction containers
-#     if config.multitask_type == "off":
-#         all_preds, all_labels, all_probs = [], [], []
-#     else:
-#         all_preds = {task: [] for task in config.OARSI_TASKS.keys()}
-#         all_labels = {task: [] for task in config.OARSI_TASKS.keys()}
-#         all_probs = {task: [] for task in config.OARSI_TASKS.keys()}
-#         all_attentions = {task: [] for task in config.OARSI_TASKS.keys()}
-#         all_patch_embeddings = {task: [] for task in config.OARSI_TASKS.keys()}
-#         all_aggregated_features = {task: [] for task in config.OARSI_TASKS.keys()}
+    # Prepare prediction containers
+    if config.multitask_type == "off":
+        all_preds, all_labels, all_probs = [], [], []
+        all_attentions = []
+        all_patch_embeddings = []
+        all_aggregated_features = []
+    else:
+        all_preds = {task: [] for task in config.OARSI_TASKS.keys()}
+        all_labels = {task: [] for task in config.OARSI_TASKS.keys()}
+        all_probs = {task: [] for task in config.OARSI_TASKS.keys()}
+        all_attentions = {task: [] for task in config.OARSI_TASKS.keys()}
+        all_patch_embeddings = {task: [] for task in config.OARSI_TASKS.keys()}
+        all_aggregated_features = {task: [] for task in config.OARSI_TASKS.keys()}
         
 
-#     # Setup attention tool if applicable
-#     attention_tool = build_CAM_attention_tool(config.feedback_cam, model_org) if model_org else None
-#     if model_org:
-#         model_org.eval()
+    # Setup attention tool if applicable
+    attention_tool = build_CAM_attention_tool(config.feedback_cam, model_org) if model_org else None
+    if model_org:
+        model_org.eval()
 
-#     progress_bar = tqdm(loader, desc=desc, leave=False)
+    progress_bar = tqdm(loader, desc=desc, leave=False)
 
-#     for list_of_patch_bags, labels_batch, group_name, list_of_features in progress_bar:
-#         if not list_of_patch_bags:
-#             continue
+    for list_of_patch_bags, labels_batch, group_name, list_of_features in progress_bar:
+        if not list_of_patch_bags:
+            continue
 
-#         # Move valid bags + features
-#         moved_bags, moved_features, valid_indices = [], [], []
-#         for i, bag in enumerate(list_of_patch_bags):
-#             if bag.nelement() > 0:
-#                 moved_bags.append(bag.to(device, non_blocking=True))
-#                 moved_features.append(list_of_features[i][0].to(device, non_blocking=True))
-#                 valid_indices.append(i)
+        # Move valid bags + features
+        moved_bags, moved_features, valid_indices = [], [], []
+        for i, bag in enumerate(list_of_patch_bags):
+            if bag.nelement() > 0:
+                moved_bags.append(bag.to(device, non_blocking=True))
+                moved_features.append(list_of_features[i][0].to(device, non_blocking=True))
+                valid_indices.append(i)
 
-#         if not moved_bags:
-#             continue
+        if not moved_bags:
+            continue
 
-#         labels_batch = labels_batch[valid_indices].to(device, non_blocking=True)
+        labels_batch = labels_batch[valid_indices].to(device, non_blocking=True)
 
-#         if is_training:
-#             optimizer.zero_grad()
+        if is_training:
+            optimizer.zero_grad()
 
-#         with torch.set_grad_enabled(is_training):
-#             # Forward pass
-#             if config.feedback_type == "off":
-#                 outputs, att_scores, patch_embeddings, aggregated_features = model(moved_bags)
-#             else:
-#                 outputs, att_scores, patch_embeddings, aggregated_features = model(moved_bags, model_org, attention_tool)
+        with torch.set_grad_enabled(is_training):
+            # Forward pass
+            if config.feedback_type == "off":
+                outputs, att_scores, patch_embeddings, aggregated_features = model(moved_bags)
+            else:
+                outputs, att_scores, patch_embeddings, aggregated_features = model(moved_bags, model_org, attention_tool)
 
-#             # Target handling
-#             if config.multitask_type == "off":
-#                 loss = criterion(outputs, labels_batch)
+            # Target handling
+            if config.multitask_type == "off":
+                loss = criterion(outputs, labels_batch)
                 
-#             else:
-#                 if config.multitask_type == "all":
-#                     targets = {
-#                         "kl":   labels_batch,
-#                         "jsnm": torch.tensor([f[0] for f in moved_features], device=device),
-#                         "jsnl": torch.tensor([f[1] for f in moved_features], device=device),
-#                         "osfm": torch.tensor([f[2] for f in moved_features], device=device),
-#                         "ostm": torch.tensor([f[3] for f in moved_features], device=device),
-#                         "ostl": torch.tensor([f[4] for f in moved_features], device=device),
-#                         "osfl": torch.tensor([f[5] for f in moved_features], device=device),
-#                     }
-#                     # Replace -999 with 0
-#                     for k, v in targets.items():
-#                         targets[k] = torch.where(v == -999, torch.tensor(0, device=device), v)
+            else:
+                if config.multitask_type == "all":
+                    targets = {
+                        "kl":   labels_batch,
+                        "jsnm": torch.tensor([f[0] for f in moved_features], device=device),
+                        "jsnl": torch.tensor([f[1] for f in moved_features], device=device),
+                        "osfm": torch.tensor([f[2] for f in moved_features], device=device),
+                        "ostm": torch.tensor([f[3] for f in moved_features], device=device),
+                        "ostl": torch.tensor([f[4] for f in moved_features], device=device),
+                        "osfl": torch.tensor([f[5] for f in moved_features], device=device),
+                    }
+                    # Replace -999 with 0
+                    for k, v in targets.items():
+                        targets[k] = torch.where(v == -999, torch.tensor(0, device=device), v)
  
                                 
-#                 elif config.multitask_type == "kl_jsn":
-#                     targets = {
-#                         "kl":   labels_batch,
-#                         "jsnm": torch.tensor([f[0] for f in moved_features], device=device),
-#                         "jsnl": torch.tensor([f[1] for f in moved_features], device=device),
-#                     }
+                elif config.multitask_type == "kl_jsn":
+                    targets = {
+                        "kl":   labels_batch,
+                        "jsnm": torch.tensor([f[0] for f in moved_features], device=device),
+                        "jsnl": torch.tensor([f[1] for f in moved_features], device=device),
+                    }
                 
-#                 if config.lossfcn_type == "CoralLoss_MultiTask":
-#                     targets_levels = {}
-#                     for k, v in targets.items():
-#                         num_classes = config.OARSI_TASKS[k]  # your dict of num classes per task
-#                         targets_levels[k] = labels_to_levels(v, num_classes)
-#                     loss, loss_dict = criterion(outputs, targets_levels)
-#                 else:
-#                     loss, loss_dict = criterion(outputs, targets)
+                if config.lossfcn_type == "CoralLoss_MultiTask":
+                    targets_levels = {}
+                    for k, v in targets.items():
+                        num_classes = config.OARSI_TASKS[k]  # your dict of num classes per task
+                        targets_levels[k] = labels_to_levels(v, num_classes)
+                    loss, loss_dict = criterion(outputs, targets_levels)
+                else:
+                    loss, loss_dict = criterion(outputs, targets)
 
 
-#             # Backward
-#             if is_training:
-#                 loss.backward()
-#                 optimizer.step()
+            # Backward
+            if is_training:
+                loss.backward()
+                optimizer.step()
 
-#         # Update running loss
-#         total_loss += loss.item() * labels_batch.size(0)
-#         num_processed_samples += labels_batch.size(0)
+        # Update running loss
+        total_loss += loss.item() * labels_batch.size(0)
+        num_processed_samples += labels_batch.size(0)
 
-#         # Predictions
-#         if config.multitask_type == "off":
-#             if config.predict_criteria == "Coral":
-#                 predicted, probs = coral_predict(outputs)
-#             elif config.predict_criteria == "Max":
-#                 _, predicted = torch.max(outputs.data, 1)
-#             all_preds.extend(predicted.cpu().numpy())
-#             all_labels.extend(labels_batch.cpu().numpy())
-#             # all_probs.extend(probs.cpu().numpy())
-#         else:
-#             if config.predict_criteria == "Coral_Multitask":
-#                 predicted, probs = coral_multitask_predict(outputs)
-#                 for task in config.OARSI_TASKS.keys():
-#                     all_preds[task].extend(predicted[task][0].cpu().numpy())
-#                     all_labels[task].extend(targets[task].cpu().numpy())
-#                     all_attentions[task].extend(att_scores.detach().cpu().numpy())
-#                     all_patch_embeddings[task].extend(patch_embeddings.detach().cpu().numpy())
-#                     all_aggregated_features[task].extend(aggregated_features.detach().cpu().numpy())
-
-
-#             elif config.predict_criteria == "Max_Multitask":
-#                 predicted = {}
-#                 for task, out in outputs.items():
-#                     _, pred = torch.max(out.data, 1)
-#                     predicted[task] = pred
-#                 for task in config.OARSI_TASKS.keys():
-#                     all_preds[task].extend(predicted[task].cpu().numpy())
-#                     all_labels[task].extend(targets[task].cpu().numpy())
-#                     all_attentions[task].extend(att_scores.detach().cpu().numpy())
-#                     all_patch_embeddings[task].extend(patch_embeddings.detach().cpu().numpy())
-#                     all_aggregated_features[task].extend(aggregated_features.detach().cpu().numpy())
+        # Predictions
+        if config.multitask_type == "off":
+            if config.predict_criteria == "Coral":
+                predicted, probs = coral_predict(outputs)
+            elif config.predict_criteria == "Max":
+                _, predicted = torch.max(outputs.data, 1)
+            all_preds.extend(predicted.cpu().numpy())
+            all_labels.extend(labels_batch.cpu().numpy())
+            # all_probs.extend(probs.cpu().numpy())
+        else:
+            if config.predict_criteria == "Coral_Multitask":
+                predicted, probs = coral_multitask_predict(outputs)
+                for task in config.OARSI_TASKS.keys():
+                    all_preds[task].extend(predicted[task][0].cpu().numpy())
+                    all_labels[task].extend(targets[task].cpu().numpy())
+                    all_attentions[task].extend(att_scores.detach().cpu().numpy())
+                    all_patch_embeddings[task].extend(patch_embeddings.detach().cpu().numpy())
+                    all_aggregated_features[task].extend(aggregated_features.detach().cpu().numpy())
 
 
-#                 # all_probs[task].extend(probs[task][0].cpu().numpy())
+            elif config.predict_criteria == "Max_Multitask":
+                predicted = {}
+                for task, out in outputs.items():
+                    _, pred = torch.max(out.data, 1)
+                    predicted[task] = pred
+                for task in config.OARSI_TASKS.keys():
+                    all_preds[task].extend(predicted[task].cpu().numpy())
+                    all_labels[task].extend(targets[task].cpu().numpy())
+                    all_attentions[task].extend(att_scores.detach().cpu().numpy())
+                    all_patch_embeddings[task].extend(patch_embeddings.detach().cpu().numpy())
+                    all_aggregated_features[task].extend(aggregated_features.detach().cpu().numpy())
 
-#         progress_bar.set_postfix(loss=loss.item())
 
-#     avg_loss = total_loss / num_processed_samples if num_processed_samples > 0 else 0
-#     return avg_loss, all_labels, all_preds, all_probs, all_attentions, all_patch_embeddings, all_aggregated_features
+                # all_probs[task].extend(probs[task][0].cpu().numpy())
+
+        progress_bar.set_postfix(loss=loss.item())
+
+    avg_loss = total_loss / num_processed_samples if num_processed_samples > 0 else 0
+    return avg_loss, all_labels, all_preds, all_probs, all_attentions, all_patch_embeddings, all_aggregated_features
 
 def main(config):
 
