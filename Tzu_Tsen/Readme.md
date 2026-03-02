@@ -47,8 +47,54 @@ This script generates the following files:
 The main dataset file containing the extracted and processed image patches, ready for model training.
 
 ## Training
-`config.py` contain training parameter and data parser.
+Run `train.py` with argument
 
- 
+1. Train model based on multi-task learning
+```
+python train.py \
+  --seed 42 \
+  --model_type MIL_MultiTask_imedslab \
+  --lossfcn_type CrossEntropy_MultiTask \
+  --predict_criteria Max_Multitask \
+  --classweight_type all_metrics_inv \
+  --multitask_type all \
+  --note 0.3weightforOARSIloss 
+```
+2. Train model based on single-task learning (KL only)
+```
+python train.py \
+  --seed 42 \
+  --inference_targe kl \
+  --model_type MIL \
+  --lossfcn_type CrossEntropy \
+  --predict_criteria Max \
+  --classweight_type inv \
+  --multitask_type off \
+  --feedback_type off \
+  --feedback_cam off \
+  --note aggregation_type_mean
+
+```
 
 ## Inference and Visualization
+```
+python inference.py \
+  --current_ckpt demo_ckpt \
+  --seed 42 \
+  --model_type MIL_MultiTask_imedslab \
+  --lossfcn_type CrossEntropy_MultiTask \
+  --predict_criteria Max_Multitask \
+  --classweight_type all_metrics_inv \
+  --multitask_type all \
+  --feedback_type off \
+  --feedback_cam off \
+  --note demo
+```
+`inference.py`
+
+## Code 
+`config.py` contain training parameter and data parser.
+`model.py` 
+`dataset.py`
+`losses.py`
+`myutils.py`
