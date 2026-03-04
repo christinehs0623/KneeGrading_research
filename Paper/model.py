@@ -407,12 +407,12 @@ class OrdinalHead(nn.Module):
             nn.Linear(in_dim, in_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(in_dim, num_classes - 1)  # K-1 個logit
+            nn.Linear(in_dim, num_classes - 1) 
         )
         
     def forward(self, x):
-        logits = self.fc(x)          # (B, K-1)
-        prob = torch.sigmoid(logits) # 轉成 >=k 的機率
+        logits = self.fc(x)         
+        prob = torch.sigmoid(logits) 
         return logits, prob
     
 class Ordinal_MultiTaskHead(nn.Module):
@@ -658,11 +658,6 @@ class CompleteMILModel_MultiTask_SharedHead(nn.Module):
                                         aggregation_type=aggregation_type)
 
         self.shared_head = nn.Linear(feature_extractor_out_dim, sum([num_cls-1 for num_cls in oai_task_num_classes.values()]))
-        # self.oai_heads = nn.ModuleDict()
-        # if oai_task_num_classes is not None:
-        #     for task_name, num_cls in oai_task_num_classes.items():
-        #         # Each ordinal head outputs K-1 logits
-        #         self.oai_heads[task_name] = nn.Linear(feature_extractor_out_dim, num_cls - 1)
 
     def forward(self, list_of_patch_bags): # list_of_patch_bags: list of tensors, each (N_i, C, H, W)
         batch_logits = []
@@ -693,9 +688,6 @@ class CompleteMILModel_MultiTask_SharedHead(nn.Module):
             aggregated_features_all.append(aggregated_features.cpu())
 
              # --- Auxiliary OAI predictions ---
-            # for task_name, head in self.oai_heads.items():
-            #     oai_pred = head(aggregated_features)  # (1, K-1)
-            #     oai_preds_all[task_name].append(oai_pred)
             logits = self.shared_head(aggregated_features)  # (batch_size, total_num_logits)
             # split into tasks
             task_splits = torch.split(logits, [num_cls-1 for num_cls in self.oai_task_num_classes.values()], dim=1)
@@ -789,11 +781,6 @@ class CompleteMILModel_MultiTask_imedslab(nn.Module):
                                       use_gwap_hidden=False,
                                       no_pool=True)
         
-        # if oai_task_num_classes is not None:
-        #     for task_name, num_cls in oai_task_num_classes.items():
-        #         # Each ordinal head outputs K-1 logits
-        #         self.oai_heads[task_name] = nn.Linear(feature_extractor_out_dim, num_cls)
-
     def forward(self, list_of_patch_bags): # list_of_patch_bags: list of tensors, each (N_i, C, H, W)
         batch_logits = []
         batch_att_scores = []
@@ -1050,11 +1037,7 @@ class CompleteMILOrdinalModel_MultiTask_imedslab(nn.Module):
                                       use_gwap_hidden=False,
                                       no_pool=True)
         
-        # if oai_task_num_classes is not None:
-        #     for task_name, num_cls in oai_task_num_classes.items():
-        #         # Each ordinal head outputs K-1 logits
-        #         self.oai_heads[task_name] = nn.Linear(feature_extractor_out_dim, num_cls)
-
+        
     def forward(self, list_of_patch_bags): # list_of_patch_bags: list of tensors, each (N_i, C, H, W)
         batch_logits = []
         batch_att_scores = []
@@ -1224,34 +1207,6 @@ if __name__ == "__main__":
                                                oai_task_num_classes={"kl":5, "mjs":4},
                                                aggregation_type='attention')
 
-
-
-    # dummy_patch_bag_1 = torch.randn(10, 3, 64, 64)  # 10 patches
-    # dummy_patch_bag_2 = torch.randn(15, 3, 64, 64)  # 15 patches
-    # dummy_patch_bag_3 = torch.randn(8, 3, 64, 64)   # 8 patches
-    # list_of_patch_bags = [dummy_patch_bag_1, dummy_patch_bag_2, dummy_patch_bag_3]  
-    # oai_preds_all, final_batch_att_scores, patch_embeddings_stacked_all, final_aggregated_features = model(list_of_patch_bags)
-    # for task_name, preds in oai_preds_all.items():
-    #     print(f"Task: {task_name}, Predictions shape: {preds.shape}")
-    # print("Final batch attention scores shape:", final_batch_att_scores.shape)
-    # print("Patch embeddings stacked shape:", patch_embeddings_stacked_all.shape)
-    # print("Final aggregated features shape:", final_aggregated_features.shape)
-
     # model size
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Total model parameters: {total_params}")
-
-    # model1 = CompleteMILModel_ORG(feature_extractor_out_dim=128,
-    #                          num_classes=5,
-    #                          aggregation_type='attention')
-    # model2 = CompleteMILModel_COPY(feature_extractor_out_dim=128,
-    #                          num_classes=5,
-    #                          aggregation_type='attention')
-    # ckpt = "./original_data/V00/model_checkpoints_tnc_final/best_model_kl_kappa.pth"
-    # sd = torch.load(ckpt, map_location="cpu")
-    # model1.load_state_dict(sd)
-    # model2.load_state_dict(sd)
-
-    # for p1, p2 in zip(model1.parameters(), model2.parameters()):
-    #     if not torch.equal(p1, p2):
-    #         print("Parameters are not equal")

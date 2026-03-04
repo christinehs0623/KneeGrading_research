@@ -107,24 +107,12 @@ def calculate_mean_std(h5_file, sample_groups, save_path, DEFAULT_MAX_PIXEL_VALU
     return mean, std
 
 def compute_effective_class_weights(labels, num_classes, beta=0.9999):
-    """
-    計算 CORAL loss 每個 threshold 的 effective class weight
-    
-    Args:
-        labels: (N,) tensor，包含 ordinal label，例如 [0,1,2,3,4]
-        num_classes: 總類別數 (K)，例如 5
-        beta: smoothing 參數，越接近1，越強調小樣本類別
-    
-    Returns:
-        weights_per_threshold: list of (pos_weight, neg_weight) for each threshold
-                               長度為 K-1
-    """
     # print("Computing effective class weights for ", labels)
     N = labels.sum()
     weights_per_threshold = []
 
-    for k in range(num_classes - 1):  # K-1 個 threshold
-        # 定義正負樣本
+    for k in range(num_classes - 1):  # K-1 threshold
+
         pos_idx = labels[k+1:].sum()
         neg_idx = N - pos_idx
         # print("pos_idx :", pos_idx )
@@ -133,7 +121,6 @@ def compute_effective_class_weights(labels, num_classes, beta=0.9999):
         n_pos = np.sum(pos_idx)
         n_neg = np.sum(neg_idx)
 
-        # 避免除零
         n_pos = max(1, n_pos)
         n_neg = max(1, n_neg)
 
@@ -141,14 +128,13 @@ def compute_effective_class_weights(labels, num_classes, beta=0.9999):
         eff_pos = (1 - beta) / (1 - beta**n_pos)
         eff_neg = (1 - beta) / (1 - beta**n_neg)
 
-        # 取倒數當 weight
         w_pos = 1.0 / eff_pos
         w_neg = 1.0 / eff_neg
 
         # w_pos = w_pos ** 2
         # w_neg = w_neg ** 2
 
-        # normalize，避免 scale 差太多
+        # normalize
         s = w_pos + w_neg
         w_pos /= s
         w_neg /= s
@@ -245,52 +231,19 @@ def get_criterion(lossfcn_type, class_weights_tensor, oai_task_num_classes=None)
 
 
 def get_model(config):
-    if config.model_type == "MILOrdinal":  # ordinal model
-        from model import CompleteMILOrdinalModel
-        model = CompleteMILOrdinalModel(config.FEATURE_EXTRACTOR_OUT_DIM, config.KL_NUM_CLASSES, config.AGGREGATION_TYPE).to(config.DEVICE)
-    elif config.model_type == "MILOrdinal_MultiTask":  # multitask
-        from model import CompleteMILOrdinal_MultiTask_Model
-        model = CompleteMILOrdinal_MultiTask_Model(config.FEATURE_EXTRACTOR_OUT_DIM,
-                                                   config.OARSI_TASKS,
-                                                   config.AGGREGATION_TYPE).to(config.DEVICE)
-    elif config.model_type == "MILCoral_MultiTask":
-        from model import CompleteMILCoral_MultiTask_Model
-        model = CompleteMILCoral_MultiTask_Model(config.FEATURE_EXTRACTOR_OUT_DIM,
-                                                config.OARSI_TASKS,
-                                                config.AGGREGATION_TYPE).to(config.DEVICE)
+    if config.model_type == "MIL": 
+        from model import CompleteMILModel
+        model = CompleteMILModel(config.FEATURE_EXTRACTOR_OUT_DIM,
+                                     config.KL_NUM_CLASSES,
+                                     config.AGGREGATION_TYPE).to(config.DEVICE)
     elif config.model_type == "MIL_ORG":
         from model import CompleteMILModel_ORG
         model = CompleteMILModel_ORG(config.FEATURE_EXTRACTOR_OUT_DIM,
                                      config.KL_NUM_CLASSES,
                                      config.AGGREGATION_TYPE).to(config.DEVICE)
-    elif config.model_type == "MIL": 
-        from model import CompleteMILModel
-        model = CompleteMILModel(config.FEATURE_EXTRACTOR_OUT_DIM,
-                                     config.KL_NUM_CLASSES,
-                                     config.AGGREGATION_TYPE).to(config.DEVICE)
-    elif config.model_type == "MIL_MultiTask":
-        from model import CompleteMILModel_MultiTask
-        model = CompleteMILModel_MultiTask(config.FEATURE_EXTRACTOR_OUT_DIM,
-                                     config.OARSI_TASKS,
-                                     config.AGGREGATION_TYPE).to(config.DEVICE)
-    elif config.model_type == "MIL_MultiTask_SharedHead":
-        from model import CompleteMILModel_MultiTask_SharedHead
-        model = CompleteMILModel_MultiTask_SharedHead(config.FEATURE_EXTRACTOR_OUT_DIM,
-                                     config.OARSI_TASKS,
-                                     config.AGGREGATION_TYPE).to(config.DEVICE)
-    elif config.model_type == "MIL_wGP_MultiTask":
-        from model import CompleteMILModel_wGP_MultiTask
-        model = CompleteMILModel_wGP_MultiTask(config.FEATURE_EXTRACTOR_OUT_DIM,
-                                     config.OARSI_TASKS,
-                                     config.AGGREGATION_TYPE).to(config.DEVICE)
     elif config.model_type == "MIL_MultiTask_imedslab":
         from model import CompleteMILModel_MultiTask_imedslab
         model = CompleteMILModel_MultiTask_imedslab(config.FEATURE_EXTRACTOR_OUT_DIM,
-                                     config.OARSI_TASKS,
-                                     config.AGGREGATION_TYPE).to(config.DEVICE)
-    elif config.model_type == "MILOrdinal_MultiTask_imedslab":
-        from model import CompleteMILOrdinalModel_MultiTask_imedslab
-        model = CompleteMILOrdinalModel_MultiTask_imedslab(config.FEATURE_EXTRACTOR_OUT_DIM,
                                      config.OARSI_TASKS,
                                      config.AGGREGATION_TYPE).to(config.DEVICE)
     return model
@@ -424,10 +377,8 @@ def process_CAM(model, target_layer, target_class, patch_bag_tensor, patches_tes
         )
     # batch_size = 41
     batch_size = patch_bag_tensor.shape[0]
-    # 1) 準備 targets list，同一個 target_class 重複 batch_size 次
     targets = [ ClassifierOutputTarget(target_class) ] * batch_size
 
-    # 2) 一次跑 CAM，回傳 shape = (batch_size, H, W)
     grayscale_cams = cam(
         input_tensor=patch_bag_tensor,   # shape [41,1,16,16]
         targets=targets
@@ -470,14 +421,6 @@ def process_CAM(model, target_layer, target_class, patch_bag_tensor, patches_tes
 
     for method_name, heatmaps in cam_data_sources.items():
         print(f"Displaying grid for: {method_name}")
-        # Make sure 'patches_test' and 'PATCH_POINT_INDICES' are defined and have the correct data
-        # Also, ensure 'heatmaps' (i.e., grayscale_cams, etc.) are defined.
-        # If 'att_scores_norm' is used, ensure it's defined too.
-        
-        # Example:
-        # if 'patches_test' not in globals() or 'PATCH_POINT_INDICES' not in globals() or method_name not in globals():
-        #    print(f"Skipping {method_name} due to missing data. Please define patches_test, PATCH_POINT_INDICES, and heatmaps.")
-        #    continue
 
         plot_heatmap = False
         if plot_heatmap:
@@ -1076,16 +1019,6 @@ def visualize_cam_comparisons(
 
     # Ensemble CAM (optional)
     method_dict = grayscale_cam_dict.copy()
-    # if method_dict:
-    #     keys = list(method_dict.keys())
-    #     n_methods = len(keys)
-    #     ensemble = [np.zeros_like(method_dict[keys[0]][i], dtype=np.float64) for i in range(len(method_dict[keys[0]]))]
-    #     for method_cams in method_dict.values():
-    #         if len(method_cams) != len(ensemble):
-    #             continue
-    #         for i in range(len(method_cams)):
-    #             ensemble[i] += method_cams[i] / n_methods
-    #     method_dict["Ensemble"] = ensemble
 
     n_methods = len(method_dict)
     n_cols = 3
@@ -1096,10 +1029,6 @@ def visualize_cam_comparisons(
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height))
     axes_flat = axes.flatten() if isinstance(axes, np.ndarray) else [axes]
 
-    # fig.suptitle(
-    #     f"{dicom_data.SeriesDescription} - CAM Method Comparison:\n{patient_id}_{side} [{index_test}] (True: KL-{test_labels['kl'[index_test]]}, Pred: KL-{test_preds['kl'][index_test].argmax()})",
-    #     fontsize=30, y=0.99
-    # )
     if type(test_labels) is dict:
 
         true_kl = test_labels["kl"][index_test]
@@ -1182,23 +1111,6 @@ def visualize_cam_comparisons(
     os.makedirs(os.path.join(save_path, "cam"), exist_ok=True)
     fig.savefig(os.path.join(save_path, f"cam/cam_{patient_id}_{side}.png"), format='png')
 
-    # fig.savefig(save_path, dpi=150, bbox_inches='tight')
-    # print(f"Saved to: {save_path}")
-    # plt.show()
-
-    # def generate_img_ecam(ensemble_grayscale_cams, 
-    #     dicom_info,
-    #     base_image_processed,
-    #     current_shapes_L,
-    #     current_shapes_R,
-    #     PATCH_POINT_INDICES,
-    #     att_scores,
-    #     patch_size_val,
-    #     new_size_tuple_val,
-    #     CMAP,
-    #     ALPHA,
-    #     current_patient_id,
-    #     side):
     SUBPLOT_FIG_WIDTH = 10
     SUBPLOT_FIG_HEIGHT = 12
     # --- Setup for Multi-Subplot Figure ---
@@ -1215,8 +1127,7 @@ def visualize_cam_comparisons(
 
     if num_methods == 0:
         print("No CAM data to plot.")
-        # plt.show() # Or handle as an error
-        # exit() # Or return, depending on context
+
     else:
         if num_methods == 1:
             axes_list = [axes_array]
@@ -1225,9 +1136,6 @@ def visualize_cam_comparisons(
         else:
             axes_list = axes_array.flatten()
 
-
-        # fig.suptitle(f"{dicom_info.SeriesDescription} - CAM Method Comparison:\n{current_patient_id}_{side} [{index_test}] (True: KL-{test_kls[index_test]}, Pred: KL-{test_preds[index_test].argmax()})", 
-        #              fontsize=30, y=0.99)
         for i, (method_name, cam_array_for_method) in enumerate(cam_data_sources_to_plot.items()):
             if i < len(axes_list):
                 current_ax = axes_list[i]
@@ -1260,7 +1168,6 @@ def visualize_cam_comparisons(
 
         plt.tight_layout(rect=[0, 0.03, 1, 0.96])
 
-        # OUTPUT_DIR = rf"./demo" # Changed output dir name
         if show_heatmap:
             OUTPUT_DIR = os.path.join(save_path, "ecam")
             os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -1299,7 +1206,6 @@ def run_gradcam_visualization(target_id, target_side, model, model_org, test_ds,
 
     DEVICE = next(model.parameters()).device
 
-    # Step 1: 找到目標索引與模型輸出
     index = np.where(np.array(test_pids) == f"{target_id}_{target_side}")[0].item()
     target_layer = [model.patch_feature_extractor.conv_block3[0]]
     patches_test, label = test_ds.__getitem__(index)
@@ -1316,7 +1222,6 @@ def run_gradcam_visualization(target_id, target_side, model, model_org, test_ds,
         model, target_layer, target_class, patch_bag_tensor, patches_test
     )
 
-    # Step 2: 載入 Ground Truth 資訊
     id_shapeLR_kl = np.load(r"./inference/id_shapeLR_V00.npz")
     test_id_pred = np.load(r"./inference/test_pred.npz")
     test_id_att = np.load(r"./inference/test_att_scores.npz")
@@ -1324,8 +1229,6 @@ def run_gradcam_visualization(target_id, target_side, model, model_org, test_ds,
     patient_ids = id_shapeLR_kl["id"]
     shapes_L_2d = id_shapeLR_kl["shapes_L"]
     shapes_R_2d = id_shapeLR_kl["shapes_R"]
-    kl_grades_L_np = id_shapeLR_kl["KL_L"]
-    kl_grades_R_np = id_shapeLR_kl["KL_R"]
 
     test_ids = test_id_pred["id"]
     test_preds = test_id_pred["prob"]
@@ -1340,7 +1243,6 @@ def run_gradcam_visualization(target_id, target_side, model, model_org, test_ds,
     print("Prediction Probs:", " ".join(f"{x:.4f}" for x in test_preds[index_test]))
     print("Correct!" if np.argmax(test_preds[index_test]) == test_kls[index_test] else "Wrong!")
 
-    # Step 3: Attention 視覺化
     att_scores_norm = normalize_attention_scores(test_att_scores[index_test])
     file_path = rf"./inference/Bilateral_PA_Fixed_Flexion_Knee/{patient_ids[index_all]}.dcm"
 
@@ -1356,7 +1258,6 @@ def run_gradcam_visualization(target_id, target_side, model, model_org, test_ds,
         process_xray=process_xray
     )
 
-    # Step 4: GradCAM + Attention 比較視覺化
     visualize_cam_comparisons(
         patient_id=patient_ids[index_all],
         index_all=index_all,

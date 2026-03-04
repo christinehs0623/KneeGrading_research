@@ -11,12 +11,7 @@ NOW = datetime.now().strftime('%Y%m%d_%H%M%S')
 DATA_HALF = False
 
 # Dataset / Checkpoints
-# DEFAULT_H5_FILE = "knee_patches_patient_grouped_16_100_all_feature.h5"
 DEFAULT_H5_FILE = "./original_data/V00/V00_knee_patches_patient_grouped_16_100_all_feature.h5"
-# DEFAULT_H5_FILE = "./original_data/V00/model_checkpoints_tnc_final/knee_patches_patient_grouped_16_100.h5"
-
-# DEFAULT_PRE_CKPT_DIR = "model_checkpoints_tnc_final"
-# DEFAULT_PRETRAINED_MODEL = os.path.join(DEFAULT_PRE_CKPT_DIR, "best_model_val_kappa.pth")
 
 # Training hyperparameters
 KL_NUM_CLASSES = 5
@@ -37,7 +32,6 @@ LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-4
 BATCH_SIZE = 16
 NUM_EPOCHS = 200
-# SEED = 42
 DEFAULT_MAX_PIXEL_VALUE = 65535.0
 
 # Device setup
@@ -53,12 +47,12 @@ def get_args():
     parser.add_argument("--current_ckpt", type=str, default=None)
     parser.add_argument("--use_baseline", action="store_true", help="Use baseline MIL model")
     parser.add_argument("--debug", action="store_true", help="Debug mode")
+    parser.add_argument("--do_bootstrap", action="store_true", help="Whether to perform bootstrap sampling for confidence intervals")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument(
             "--model_type",
             type=str,
-            choices=["MIL", "MIL_ORG", "MIL_MultiTask", "MIL_MultiTask_SharedHead", "MIL_wGP_MultiTask", "MILOrdinal",
-                    "MILOrdinal_MultiTask", "MILCoral_MultiTask", "MIL_MultiTask_imedslab", "MILOrdinal_MultiTask_imedslab"],
+            choices=["MIL", "MIL_ORG", "MIL_MultiTask_imedslab"],
             default="MIL",
             help= "Choose the MIL model type"
         )
@@ -215,6 +209,7 @@ def build_config():
         "DEBUG_MODE": args.debug,
         "WANDB": not args.debug,
         "DATA_HALF": DATA_HALF,
+        "DO_BOOTSTRAP": args.do_bootstrap,
 
         # dataset paths
         "H5_FILE": DEFAULT_H5_FILE,

@@ -153,7 +153,7 @@ def run_epoch(loader, model, model_org, criterion, optimizer, device, is_trainin
                 _, predicted = torch.max(outputs.data, 1)
             all_preds.extend(predicted.cpu().numpy())
             all_labels.extend(labels_batch.cpu().numpy())
-            # all_probs.extend(probs.cpu().numpy())
+
         else:
             if config.predict_criteria == "Coral_Multitask":
                 predicted, probs = coral_multitask_predict(outputs)
@@ -177,82 +177,14 @@ def run_epoch(loader, model, model_org, criterion, optimizer, device, is_trainin
                     all_patch_embeddings[task].extend(patch_embeddings.detach().cpu().numpy())
                     all_aggregated_features[task].extend(aggregated_features.detach().cpu().numpy())
 
-
-                # all_probs[task].extend(probs[task][0].cpu().numpy())
-
         progress_bar.set_postfix(loss=loss.item())
 
     avg_loss = total_loss / num_processed_samples if num_processed_samples > 0 else 0
     return avg_loss, all_labels, all_preds, all_probs, all_attentions, all_patch_embeddings, all_aggregated_features
 
-# def bootstrap_evaluation(model, model_org, test_pids, config, criterion, n_iterations=5):
-#     """
-#     執行 Bootstrapping 以計算測試集的統計穩定性
-#     """
-#     all_iteration_metrics = []
-    
-#     print(f"\n" + "="*40)
-#     print(f"🌟 Starting Bootstrapping (N={n_iterations})")
-#     print("="*40)
-
-#     for i in range(n_iterations):
-#         # 1. 有放回抽樣 PIDs
-#         bs_pids = resample(
-#             test_pids,
-#             replace=True,
-#             n_samples=len(test_pids),
-#             random_state=config.SEED + i
-#         )
-
-#         # file_path = os.path.join(config.CHECKPOINT_DIR, f"bootstrap_sample_{i+1}.txt")  
-#         # with open(file_path, "w") as f:
-#         #     f.write("\n".join(bs_pids))
-            
-
-#         # 2. 建立臨時 DataLoader
-#         bs_ds = KneeMILDataset(config.H5_FILE, bs_pids, transform=create_transforms(*np.load(config.MEAN_STD_FILE_PATH))[1])
-#         bs_loader = DataLoader(
-#             bs_ds, batch_size=config.BATCH_SIZE, shuffle=False, 
-#             collate_fn=mil_collate_fn, num_workers=config.NUM_WORKERS, pin_memory=config.PIN_MEMORY
-#         )
-
-#         # 3. 執行推論
-#         _, bs_labels, bs_preds, _, _, _, _ = run_epoch(
-#             bs_loader, model, model_org, criterion, None, config.DEVICE,
-#             is_training=False, config=config, desc=f"BS-Iter {i+1}"
-#         )
-
-#         # 4. 計算指標 (使用你原本的 compute_metrics)
-#         metrics = compute_metrics(config.multitask_type, bs_labels, bs_preds)
-#         all_iteration_metrics.append(metrics)
-
-#     # 5. 整理結果
-#     tasks = config.OARSI_TASKS.keys() if config.multitask_type != "off" else ["kl"]
-#     final_stats = {}
-
-#     for task in tasks:
-#         final_stats[task] = {}
-#         for m_name in ["acc", "f1", "kappa"]:
-#             vals = [it[task][m_name] for it in all_iteration_metrics]
-#             print(f"Task {task}, Metric {m_name}: {vals}")
-#             final_stats[task][m_name] = {
-#                 "mean": np.mean(vals),
-#                 "std": np.std(vals)
-#             }
-            
-#     return final_stats
 def bootstrap_evaluation(
     model, model_org, test_pids, config, criterion, n_iterations=5
 ):
-    """
-    執行 Bootstrapping 以計算測試集的統計穩定性
-    回傳：
-        final_stats[task][metric] = {
-            "values": np.ndarray (n_iterations,),
-            "mean": float,
-            "std": float
-        }
-    """
     all_iteration_metrics = []
 
     print("\n" + "=" * 40)
@@ -260,7 +192,6 @@ def bootstrap_evaluation(
     print("=" * 40)
 
     for i in range(n_iterations):
-        # 1. 有放回抽樣 PIDs
         bs_pids = resample(
             test_pids,
             replace=True,
@@ -268,7 +199,6 @@ def bootstrap_evaluation(
             random_state=config.SEED + i
         )
 
-        # 2. 建立 DataLoader
         bs_ds = KneeMILDataset(
             config.H5_FILE,
             bs_pids,
@@ -284,7 +214,6 @@ def bootstrap_evaluation(
             pin_memory=config.PIN_MEMORY
         )
 
-        # 3. 推論
         _, bs_labels, bs_preds, _, _, _, _ = run_epoch(
             bs_loader,
             model,
@@ -297,14 +226,12 @@ def bootstrap_evaluation(
             desc=f"BS-Iter {i+1}"
         )
 
-        # 4. 計算指標
         metrics = compute_metrics(
             config.multitask_type, bs_labels, bs_preds
         )
 
         all_iteration_metrics.append(metrics)
 
-    # 5. 整理結果
     tasks = (
         config.OARSI_TASKS.keys()
         if config.multitask_type != "off"
@@ -321,7 +248,6 @@ def bootstrap_evaluation(
                 dtype=np.float32
             )
 
-            # debug 用：真的每次都有存到
             print(
                 f"[Bootstrap] Task={task}, Metric={m_name}, "
                 f"Values={vals.tolist()}"
@@ -379,106 +305,9 @@ def main(config):
         print(f"Using half dataset: train {len(train_pids)}, val {len(val_pids)}, test {len(test_pids)}")
 
     # Datasets and loaders
-    train_ds = KneeMILDataset(config.H5_FILE, train_pids, transform=train_transform)
-    val_ds = KneeMILDataset(config.H5_FILE, val_pids, transform=val_transform)
     test_ds = KneeMILDataset(config.H5_FILE, test_pids, transform=val_transform)
-    
-    # from collections import Counter
-    # oarsi_key= {
-    #             "jsnm": 4,  # 0–3 ordinal
-    #             "jsnl": 4,  # 0–3 ordinal
-    #             "osfm": 4,  # 0–3 ordinal
-    #             "ostm": 4,  # 0–3 ordinal
-    #             "ostl": 4,  # 0–3 ordinal
-    #             "osfl": 4,  # 0–3 ordinal
-    #         }
-    # def count_dataset(dataset):
-    #     kl_counts = Counter()
-    #     oarsi_counts = {task: Counter() for task in oarsi_key.keys()}
-
-    #     for i in range(len(dataset)):
-    #         _, kl, _, aux = dataset[i]
-
-    #         kl_val = int(kl.item())
-    #         kl_counts[kl_val] += 1
-
-    #         aux = aux.view(-1)
-
-    #         # loop only over available features
-    #         for idx, task in enumerate(list(oarsi_key.keys())[:aux.size(0)]):
-    #             val = int(aux[idx].item())
-    #             oarsi_counts[task][val] += 1
-
-    #     return kl_counts, oarsi_counts
-    # train_kl, train_oarsi = count_dataset(train_ds)
-    # val_kl, val_oarsi     = count_dataset(val_ds)
-    # test_kl, test_oarsi   = count_dataset(test_ds)
-
-    # print("Train KL:", train_kl)
-    # print("Train OARSI:", train_oarsi)
-    # print("Val KL:", val_kl)
-    # print("Val OARSI:", val_oarsi)
-    # print("Test KL:", test_kl)
-    # print("Test OARSI:", test_oarsi)
-    # # Convert counts to long-format rows
-    # rows = []
-    # def counters_to_rows(dataset_name, kl_counts, oarsi_counts):
-    #     for grade, count in kl_counts.items():
-    #         rows.append({
-    #             "Dataset": dataset_name,
-    #             "Task": "KL",
-    #             "Class": grade,
-    #             "Count": count
-    #         })
-    #     for task, cnt in oarsi_counts.items():
-    #         for score, count in cnt.items():
-    #             rows.append({
-    #                 "Dataset": dataset_name,
-    #                 "Task": task,
-    #                 "Class": score,
-    #                 "Count": count
-    #             })
-
-    # counters_to_rows("Train", train_kl, train_oarsi)
-    # counters_to_rows("Val", val_kl, val_oarsi)
-    # counters_to_rows("Test", test_kl, test_oarsi)
-    # import pandas as pd
-    # # Create long-format DataFrame
-    # df_all = pd.DataFrame(rows)
-
-    # # Create pivot summary
-    # pivot_wide = df_all.pivot_table(
-    #     index=["Dataset", "Class"],   # rows: Dataset + Grade/Class
-    #     columns="Task",               # columns: Task
-    #     values="Count",               # fill with Count
-    #     fill_value=0                  # replace missing with 0
-    # ).reset_index()
-
-    # # Reorder columns
-    # cols = ["Dataset", "Class", "KL", "jsnm", "jsnl", "osfm", "ostm", "ostl", "osfl"]
-    # pivot_wide = pivot_wide[cols]
-
-    # # Save to CSV
-    # pivot_wide.to_csv("dataset_summary.csv", index=False)
-    
     test_loader = DataLoader(test_ds, config.BATCH_SIZE, False, collate_fn=mil_collate_fn,
                              num_workers=config.NUM_WORKERS, pin_memory=config.PIN_MEMORY)
-    # kl4_pids = []
-    # for idx, pid in enumerate(test_pids):
-    #     _, label, _, _ = test_ds[idx]   # returns (patch_bag, label)
-        
-    #     # case 1: if label is just an int
-    #     if isinstance(label, int) or isinstance(label, torch.Tensor):
-    #         if int(label) == 4:
-    #             kl4_pids.append(pid)
-        
-    #     # case 2: if label is a dict with key "kl"
-    #     elif isinstance(label, dict) and "kl" in label:
-    #         if int(label["kl"]) == 4:
-    #             kl4_pids.append(pid)
-    
-    # print("Patients with KL=4:", kl4_pids)
-
 
     # ----------------- Model ----------------- #
     model = get_model(config)
@@ -491,13 +320,6 @@ def main(config):
     if model_org:
         model_org.load_state_dict(torch.load(config.PRETRAINED_MODEL_PATH, map_location=config.DEVICE))
         
-    # ----------------- Loss & Optimizer ----------------- #
-    # class_counts = np.bincount(train_kl_grades, minlength=NUM_CLASSES)
-    # # Avoid division by zero if a class is missing in training (should ideally not happen with good splits)
-    # class_weights_raw = 1.0 / (class_counts + 1e-6) # Add epsilon for stability
-    # class_weights_normalized = class_weights_raw / np.sum(class_weights_raw) * NUM_CLASSES # Optional normalization
-    # class_weights_tensor = torch.tensor(class_weights_normalized, dtype=torch.float).to(DEVICE)
-    # print(f"Using class weights: {class_weights_tensor}")
     
     class_weights_tensor = None
     criterion = get_criterion(config.lossfcn_type, class_weights_tensor, config.OARSI_TASKS)
@@ -513,7 +335,6 @@ def main(config):
     results = [f"Test Loss: {test_loss:.4f}"]
     test_metrics = compute_metrics(config.multitask_type, test_labels, test_preds)
 
-    # save all test data as np
     np.savez(
         os.path.join(config.CHECKPOINT_DIR, "test_pred.npz"),
         id=test_pids,
@@ -538,8 +359,6 @@ def main(config):
         print(report)
         results.append(f"\n[{task}]\n" + report)
         plt.rcParams.update({
-            # "font.family": "serif",
-            # "font.serif": ["Nimbus Roman", "Liberation Serif", "DejaVu Serif"],
             "font.size": 16,
             "axes.titlesize": 14,
             "xtick.labelsize": 14,
@@ -584,8 +403,6 @@ def main(config):
             results.append(f"\n[{task}]\n" + report)
             
             plt.rcParams.update({
-                # "font.family": "serif",
-                # "font.serif": ["Nimbus Roman", "Liberation Serif", "DejaVu Serif"],
                 "font.size": 16,
                 "axes.titlesize": 14,
                 "xtick.labelsize": 14,
@@ -625,35 +442,17 @@ def main(config):
             )
 
     print("Inference finished.")
-    # return 0
-    
-    # creat the histogram of attention scores based on patches label
-    # plt.rcParams.update({'font.size': 14})
-    # plt.figure(figsize=(8,6))
-    # all_attentions_array = np.array(all_attentions['kl'])  # Convert list to array
-    # plt.hist(all_attentions_array, bins=50, color='blue', alpha=0.7)
-    # plt.title('Histogram of Attention Scores (KL Task)')
-    # plt.xlabel('Attention Score')
-    # plt.ylabel('Frequency')
-    # plt.grid(axis='y', alpha=0.75)
-    # plt.savefig(os.path.join(config.CHECKPOINT_DIR, "attention_scores_histogram_kl.png"))
-    # plt.close()
-
-
 
     # ================== Visualization for a single example ==============================
     ######################################################################################
-    # print("Patients with KL=4:", kl4_pids)
-    # Patients with KL=4: ['9975485_R', '9932578_R', '9723575_L', '9653465_L', '9761463_R', '9924274_L', '9292234_L', '9215922_R', '9160801_R', '9225592_L', '9458416_L', '9478504_R', '9445318_L', '9604541_R', '9049007_L', '9635581_R', '9919646_R', '9368395_R', '9813958_R', '9572948_R', '9581915_L', '9757953_L', '9659956_L', '9690658_R', '9638123_R', '9317124_L', '9055836_R', '9039627_L', '9363397_L', '9992318_L', '9511862_R', '9095103_L', '9669124_R', '9613488_L', '9910391_R', '9693806_R', '9230284_L', '9263504_R', '9413071_R', '9049507_L', '9218916_L', '9458093_L', '9828555_L', '9721540_L', '9781749_R', '9256759_R', '9727543_L', '9495873_R', '9512864_L', '9858216_R', '9053047_L', '9742871_R', '9448133_L', '9772692_L', '9425996_L', '9235666_R', '9896743_L', '9645683_L', '9627172_R']
     target_id = "9932578"
-    # target_id = "9215922"
     target_side = "R"
     index = np.where(np.array(test_pids)==target_id + "_" + target_side)[0].item()
     target_layer = [model.patch_feature_extractor.conv_block3[0]]
     patches_test, kl_label, id, oarsi_label = test_ds.__getitem__(index)
     
     patch_bag_tensor = torch.stack(patches_test).to(config.DEVICE)  # shape: [41, 1, 16, 16]
-    # print(test_pids[index], kl_label, id, oarsi_label)
+
     model.eval()
     attention_tool = None
     if config.feedback_type == "off":
@@ -664,10 +463,6 @@ def main(config):
     else:
         logits, att_scores, patch_embeddings, aggregated_features = model([patch_bag_tensor], model_org, attention_tool)
 
-    # print(f"patch_bag_tensor shape: {patch_bag_tensor.shape}")  # shape you pass IN
-    # print(f"logits : {logits}")                      # shape OUT
-    # print(f"att_scores shape: {att_scores.shape}")              # if relevant
-
     # Argmax across classes
     if config.multitask_type != "off":
         target_classes = logits['kl'].argmax(dim=1)
@@ -677,49 +472,32 @@ def main(config):
 
     # If you want just the first class for score:
     target_class = target_classes[0].item()
-    print(f"target_class: {target_class}")
 
     # Use the first logit row (batch item 0) and its predicted class
     if config.multitask_type == "off":
         score = logits[0, target_class]
     else:
         score = logits['kl'][0, target_class]
-    print(f"score shape: {score.shape}")  # should be scalar, so shape = []
 
     model.zero_grad()
     score.backward(retain_graph=True)
     grayscale_cam_dict, PATCH_POINT_INDICES = process_CAM(model, target_layer, target_class, patch_bag_tensor, patches_test, config.CHECKPOINT_DIR)
 
-    # cam_data_sources, PATCH_POINT_INDICES
     ########################################
-    # 這邊應該是給蒐集好所有的data的處理
     data = np.load("./original_data/V00/id_shapes_LR_V00.npz")
     patient_ids = data["id"]
     shapes_L_2d = data["shapes_L"]
     shapes_R_2d = data["shapes_R"]
     kl_grades_L_np = data["KL_L"]
     kl_grades_R_np = data["KL_R"]
-    aux_features_L = data["aux_L_np"]
-    aux_features_R = data["aux_R_np"]
     index_test = index
     pid_side = test_pids[index_test]
     pid, side = str.split(pid_side, "_")
     index_all = np.where(np.array(patient_ids) == pid)[0].item()
-    print(f"{test_pids[index_test]}, {patient_ids[index_all]}, L: {kl_grades_L_np[index_all]}, R: {kl_grades_R_np[index_all]}")
-    print("Index test:", index_test, "Index all:", index_all) # index_test: the index of the test set; index_all: the index of the whole dataset
-    # print("Prediction:")
-    # print({task: test_preds[task][index_test] for task in test_preds}) # all prediction data
-    # print(" ".join(f"{x:.5f}" for x in test_preds[index_test]))
-    # print(index_test)
-    # if np.argmax(test_preds[index_test]) == test_preds['kl'][index_test]:
-    #     print("Correct!")
-    # else:
-    #     print("Wrong!")
 
     visualize = True
     if visualize:
         att_scores = normalize_attention_scores(att_scores.detach().cpu().numpy()) # 41, 1
-        print(att_scores.shape)
 
         visualize_attention_on_img(
             save_path=config.CHECKPOINT_DIR,
@@ -755,8 +533,7 @@ def main(config):
         )
 
     # ----------------- Bootstrapping ----------------- #
-    bootstrap = True
-    if bootstrap:
+    if config.do_bootstrap:
         bootstrap_stats = bootstrap_evaluation(
             model, model_org, test_pids, config, criterion, n_iterations=5
         )
@@ -771,7 +548,6 @@ def main(config):
             print(line)
             bs_results_lines.append(line)
 
-        # 將 Bootstrap 結果也寫入 inference_result.txt
         with open(os.path.join(config.CHECKPOINT_DIR, "inference_result.txt"), "a") as f:
             for line in bs_results_lines:
                 f.write(line + "\n")

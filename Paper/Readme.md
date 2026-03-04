@@ -1,5 +1,23 @@
 # Anatomically Guided Patch for Joint KL and OARSI Grading of Knee Osteoarthritis
-## Getting Start
+This repository provides the official PyTorch implementation of our proposed
+anatomically guided multiple instance learning (MIL) framework for joint
+Kellgren–Lawrence (KL) and OARSI grading of knee osteoarthritis (OA).
+
+Our method:
+- Extracts anatomically aligned patches based on landmark detection
+- Supports both single-task (KL) and multi-task (KL + OARSI) learning
+- Provides visualization tools (attention maps, Grad-CAM)
+- Supports bootstrap evaluation and k-fold experiments
+
+## Pipeline Overview
+
+1. Prepare raw OAI dataset
+2. Extract anatomically guided patches using `shape_patch_kl.py`
+3. Train single-task or multi-task MIL models
+4. Perform inference and visualization
+5. (Optional) Run bootstrap or k-fold experiments
+
+## Getting Started
 ### Environment
 To set up the environment, run the `env_script.sh` or follow the commands below to install all required dependencies.
 ```
@@ -21,11 +39,11 @@ pip install wandb
 
 ```
 
-### Data Preperation
+### Data Preparation
 Create the "bag of patches" from the raw data should be generated from Knee dataset.
 1. Dataset Organization
 ```
-data/
+original_data/
 └── V00/                                  # Baseline visit of OAI dataset
     ├── Bilateral_PA_Fixed_Flexion_Knee/  # .dcm images
     ├── Points_px/                        # .pts landmark files
@@ -47,9 +65,20 @@ This script generates the following files:
 The main dataset file containing the extracted and processed image patches, ready for model training.
 
 ## Training
-Run `train.py` with argument
-
-1. Train model based on multi-task learning
+Please load all of the data from OAI dataset for training!
+1. Train model based on single-task learning (KL only)
+```
+python train.py \
+  --seed 42 \
+  --inference_target kl \
+  --model_type MIL \
+  --lossfcn_type CrossEntropy \
+  --predict_criteria Max \
+  --classweight_type inv \
+  --multitask_type off \
+  --note single-task
+```
+2. Train model based on multi-task learning
 ```
 python train.py \
   --seed 42 \
@@ -60,9 +89,13 @@ python train.py \
   --multitask_type all \
   --note multi-task
 ```
-2. Train model based on single-task learning (KL only)
+
+
+## Inference and Visualization
+1. Inference based on single-task learning
 ```
-python train.py \
+python inference.py \
+  --current_ckpt [YOUR MODEL FOLDER NAME] \
   --seed 42 \
   --inference_target kl \
   --model_type MIL \
@@ -70,30 +103,28 @@ python train.py \
   --predict_criteria Max \
   --classweight_type inv \
   --multitask_type off \
-  --feedback_type off \
-  --feedback_cam off \
   --note single-task
 ```
-
-## Inference and Visualization
-1. Inference based on multi-task learning
+2. Inference based on multi-task learning
 ```
 python inference.py \
-  --current_ckpt demo_multi_ckpt \
+  --current_ckpt [YOUR MODEL FOLDER NAME] \
   --seed 42 \
   --model_type MIL_MultiTask_imedslab \
   --lossfcn_type CrossEntropy_MultiTask \
   --predict_criteria Max_Multitask \
   --classweight_type all_metrics_inv \
   --multitask_type all \
-  --feedback_type off \
-  --feedback_cam off \
   --note demo
 ```
-2. Inference based on single-task learning
+
+## Bootstrap
+Bootstrap evaluation computes confidence intervals for performance metrics
+based on repeated resampling of the test set.
 ```
 python inference.py \
-  --current_ckpt demo_single_ckpt \
+  --do_bootstrap \
+  --current_ckpt [YOUR MODEL FOLDER NAME] \
   --seed 42 \
   --inference_target kl \
   --model_type MIL \
@@ -101,15 +132,83 @@ python inference.py \
   --predict_criteria Max \
   --classweight_type inv \
   --multitask_type off \
-  --feedback_type off \
-  --feedback_cam off \
   --note single-task
+```
+
+## Demo
+A sample DICOM file is provided for demonstration purposes.
+This allows users to quickly test the inference pipeline without
+preparing the full OAI dataset.
+
+The demo script performs:
+- Patch extraction
+- Model inference
+- Prediction output
+- Visualization (attention / CAM)
+
+Please use the commands below to reproduce the demo results.
+
+1. Inference based on single-task learning
+```
+python inference_demo.py \
+  --current_ckpt demo_ckpt_singletask \
+  --seed 42 \
+  --inference_target kl \
+  --model_type MIL \
+  --lossfcn_type CrossEntropy \
+  --predict_criteria Max \
+  --classweight_type inv \
+  --multitask_type off \
+  --note single-task
+```
+2. Inference based on multi-task learning
+```
+python inference_demo.py \
+  --current_ckpt demo_ckpt_multitask \
+  --seed 42 \
+  --model_type MIL_MultiTask_imedslab \
+  --lossfcn_type CrossEntropy_MultiTask \
+  --predict_criteria Max_Multitask \
+  --classweight_type all_metrics_inv \
+  --multitask_type all \
   --note demo
 ```
 
-## Code 
-- `config.py` contain training parameter and data parser.
-- `model.py` 
-- `dataset.py`
-- `losses.py`
-- `myutils.py`
+
+# 5-Fold Experiment
+
+To evaluate model robustness and reduce bias from a single train/test split,
+we implement a 5-fold cross-validation pipeline.
+
+The dataset is divided into five folds at the patient level to avoid
+data leakage. In each iteration:
+- Four folds are used for training
+- The remaining fold is used for validation/testing
+
+Final performance is reported as the average across all five folds.
+
+1. Training
+```
+python train_k_fold.py \
+  --seed 42 \
+  --inference_target kl \
+  --model_type MIL \
+  --lossfcn_type CrossEntropy \
+  --predict_criteria Max \
+  --classweight_type inv \
+  --multitask_type off \
+  --note single-task
+```
+
+2. Inference
+```
+python inference_k_fold.py \
+  --seed 42 \
+  --inference_target kl \
+  --model_type MIL \
+  --lossfcn_type CrossEntropy \
+  --predict_criteria Max \
+  --classweight_type inv \
+  --multitask_type off \
+  --note single-task
+```
