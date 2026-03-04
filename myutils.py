@@ -13,18 +13,6 @@ import pydicom
 import matplotlib.patches as patches
 import math
 from losses import CoralLossWeighted, CoralLossEffective, CoralFocalLoss, CoralFocalLoss_MultiTask, CoralLoss_MultiTask, CrossEntropy_MultiTask, CoralFocalLoss_MultiTask_MetricsBalanced
-from model import (
-    CompleteMILModel_ORG,
-    CompleteMILModel,
-    CompleteMILModel_MultiTask,
-    CompleteMILModel_MultiTask_SharedHead,
-    CompleteMILOrdinalModel,
-    CompleteMILOrdinal_MultiTask_Model,
-    CompleteMILCoral_MultiTask_Model,
-    CompleteMILModel_wGP_MultiTask,
-    CompleteMILModel_MultiTask_imedslab,
-
-)
 
 def prepare_data(h5_file):
     with h5py.File(h5_file, 'r') as hf:
@@ -258,32 +246,40 @@ def get_criterion(lossfcn_type, class_weights_tensor, oai_task_num_classes=None)
 
 def get_model(config):
     if config.model_type == "MILOrdinal":  # ordinal model
+        from model import CompleteMILOrdinalModel
         model = CompleteMILOrdinalModel(config.FEATURE_EXTRACTOR_OUT_DIM, config.KL_NUM_CLASSES, config.AGGREGATION_TYPE).to(config.DEVICE)
     elif config.model_type == "MILOrdinal_MultiTask":  # multitask
+        from model import CompleteMILOrdinal_MultiTask_Model
         model = CompleteMILOrdinal_MultiTask_Model(config.FEATURE_EXTRACTOR_OUT_DIM,
                                                    config.OARSI_TASKS,
                                                    config.AGGREGATION_TYPE).to(config.DEVICE)
     elif config.model_type == "MILCoral_MultiTask":
+        from model import CompleteMILCoral_MultiTask_Model
         model = CompleteMILCoral_MultiTask_Model(config.FEATURE_EXTRACTOR_OUT_DIM,
                                                 config.OARSI_TASKS,
                                                 config.AGGREGATION_TYPE).to(config.DEVICE)
     elif config.model_type == "MIL_ORG":
+        from model import CompleteMILModel_ORG
         model = CompleteMILModel_ORG(config.FEATURE_EXTRACTOR_OUT_DIM,
                                      config.KL_NUM_CLASSES,
                                      config.AGGREGATION_TYPE).to(config.DEVICE)
     elif config.model_type == "MIL": 
+        from model import CompleteMILModel
         model = CompleteMILModel(config.FEATURE_EXTRACTOR_OUT_DIM,
                                      config.KL_NUM_CLASSES,
                                      config.AGGREGATION_TYPE).to(config.DEVICE)
     elif config.model_type == "MIL_MultiTask":
+        from model import CompleteMILModel_MultiTask
         model = CompleteMILModel_MultiTask(config.FEATURE_EXTRACTOR_OUT_DIM,
                                      config.OARSI_TASKS,
                                      config.AGGREGATION_TYPE).to(config.DEVICE)
     elif config.model_type == "MIL_MultiTask_SharedHead":
+        from model import CompleteMILModel_MultiTask_SharedHead
         model = CompleteMILModel_MultiTask_SharedHead(config.FEATURE_EXTRACTOR_OUT_DIM,
                                      config.OARSI_TASKS,
                                      config.AGGREGATION_TYPE).to(config.DEVICE)
     elif config.model_type == "MIL_wGP_MultiTask":
+        from model import CompleteMILModel_wGP_MultiTask
         model = CompleteMILModel_wGP_MultiTask(config.FEATURE_EXTRACTOR_OUT_DIM,
                                      config.OARSI_TASKS,
                                      config.AGGREGATION_TYPE).to(config.DEVICE)
@@ -304,6 +300,7 @@ def get_model_org(config):
     if config.feedback_type == "off":
         model_org = None
     else:
+        from model import CompleteMILModel
         model_org = CompleteMILModel(config.FEATURE_EXTRACTOR_OUT_DIM,
                                      config.KL_NUM_CLASSES,
                                      config.AGGREGATION_TYPE).to(config.DEVICE)

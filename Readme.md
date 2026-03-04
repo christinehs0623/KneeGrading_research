@@ -108,8 +108,8 @@ python inference.py \
 ```
 
 ## Code 
-`config.py` contain training parameter and data parser.
-`model.py` 
-`dataset.py`
-`losses.py`
-`myutils.py`
+- `config.py` contain training parameter and data parser.
+- `model.py` 
+- `dataset.py`
+- `losses.py`
+- `myutils.py`
