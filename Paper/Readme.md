@@ -20,6 +20,7 @@ Our method:
 ## Getting Started
 ### Environment
 To set up the environment, run the `env_script.sh` or follow the commands below to install all required dependencies.
+Our experiments were run on CentOS Stream 9.
 ```
 # Create conda environment
 conda create -n knee_mil python=3.10
