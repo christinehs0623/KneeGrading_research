@@ -23,6 +23,7 @@ To set up the environment, run the `env_script.sh` or follow the commands below 
 ```
 # Create conda environment
 conda create -n knee_mil python=3.10
+conda activate knee_mil
 
 # Install PyTorch with CUDA 12.8 support
 pip3 install torch torchvision torchaudio \

@@ -1,8 +1,5 @@
 __pycache__/
 wandb/
-demo/
-experimental_resource/
-DeepPatch_env.yml
 original_data/V00/ckpt/
 original_data/V00/Bilateral_PA_Fixed_Flexion_Knee/
 original_data/V00/id_shapes_LR_V00.npz
